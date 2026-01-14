@@ -1,0 +1,28 @@
+# Bot Detector Lab - Python Dependencies
+
+# Web Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Templates
+jinja2
+
+# Async File I/O
+aiofiles
+
+# Data Validation
+pydantic
+pydantic-settings
+
+# For advanced analysis (install if needed)
+pandas
+numpy
+scikit-learn
+
+# Development Tools (optional)
+pytest
+pytest-asyncio
+httpx  # For testing async endpoints
+
+selenium webdriver-manager
