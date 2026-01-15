@@ -6,8 +6,8 @@ from typing import List, Dict, Any, Tuple
 from storage.jsonl_handler import JSONLHandler
 
 class MouseAnalyzer:
-    def __init__(self):
-        self.storage = JSONLHandler()
+    def __init__(self, storage = None):
+        self.storage = storage or JSONLHandler()
         self.thresholds = {
             'min_movements': 5,
             'perfect_line_angle_variance': 5.0,

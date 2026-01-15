@@ -6,8 +6,8 @@ from models.session import LoginRequest
 from storage.jsonl_handler import JSONLHandler
 
 class HoneypotDetector:
-    def __init__(self):
-        self.storage = JSONLHandler()
+    def __init__(self, storage = None):
+        self.storage = storage or JSONLHandler()
         self.honeypot_fields = ['website', 'email_confirm', 'bot_field', 'verify']
     
     def check_form(self, login_data: LoginRequest) -> Dict[str, Any]:

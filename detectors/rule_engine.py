@@ -9,6 +9,8 @@ from datetime import datetime
 from models.session import LoginRequest
 from .mouse_analyzer import MouseAnalyzer
 from .honeypot_detector import HoneypotDetector
+from .fingerprint_analyzer import FingerprintAnalyzer
+from storage.jsonl_handler import JSONLHandler
 
 # Detection Thresholds
 MIN_SUBMIT_TIME_MS = 2000  # 2 seconds minimum for human interaction
@@ -19,10 +21,15 @@ class BotDetectionEngine:
     against a user session and aggregates the results.
     """
 
-    def __init__(self):
+    def __init__(self, storage=None):
         """Initialize specialized sub-detectors."""
-        self.mouse_analyzer = MouseAnalyzer()
-        self.honeypot_detector = HoneypotDetector()
+        # Shared storage for all detectors
+        self.storage = storage or JSONLHandler()
+
+        # Initialize sub-detectors with shared storage
+        self.mouse_analyzer = MouseAnalyzer(storage=self.storage)
+        self.honeypot_detector = HoneypotDetector(storage=self.storage)
+        self.fingerprint_analyzer = FingerprintAnalyzer()
     
     async def analyze_session(self, session_id: str, login_data: LoginRequest) -> Dict[str, Any]:
         """
@@ -44,6 +51,11 @@ class BotDetectionEngine:
         if honeypot_result['is_bot']:
             flags.append(honeypot_result)
         
+        # 2. Honeypot Interaction Events (High Confidence)
+        honeypot_event_result = await self.honeypot_detector.check_interactions(session_id)
+        if honeypot_event_result['is_bot']:
+            flags.append(honeypot_event_result)
+        
         # 2. Mouse Behavior Analysis (Medium/High Confidence)
         # Checks for linear movement, teleportation, or lack of movement
         # Awaited because it likely involves reading event logs asynchronously
@@ -56,6 +68,17 @@ class BotDetectionEngine:
         time_result = self.check_submit_time(login_data)
         if time_result['is_bot']:
             flags.append(time_result)
+        
+
+        # 4. Fingerprint Analysis (Low/Medium Confidence)
+        # Take fingerprint data from sessions (need querying storage)
+        sessions = await self.storage.read_all('sessions')
+        session_data = next((s for s in sessions if s.get('session_id') == session_id), None)
+        
+        if session_data and 'fingerprint' in session_data:
+            fingerprint_result = self.fingerprint_analyzer.analyze(session_data['fingerprint'])
+            if fingerprint_result['is_bot']:
+                flags.append(fingerprint_result)
         
         # --- Result Aggregation ---
         
