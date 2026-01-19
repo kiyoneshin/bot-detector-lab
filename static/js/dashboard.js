@@ -1,125 +1,188 @@
 /**
- * Bot Detector Lab - Dashboard Controller
- * Handles real-time stats fetching and visualization
+ * Bot Detector Lab - Enhanced Dashboard Controller
+ * Real-time stats with manual refresh and auto-update
  */
 
-let lastUpdateTime = 0;
-let logsCache = [];
-
-// DOM Loaded Event
-document.addEventListener('DOMContentLoaded', () => {
-    fetchData(); // Initial fetch
+class DashboardController {
+  constructor(config = {}) {
+    this.config = {
+      autoRefreshInterval: config.autoRefreshInterval || 10000, // 10 seconds
+      maxLogs: config.maxLogs || 50
+    };
     
-    // Set auto-refresh
-    setInterval(fetchData, 3000);
+    this.logsCache = [];
+    this.isRefreshing = false;
+    this.autoRefreshTimer = null;
+    this.lastUpdateTime = null;
+    
+    this.init();
+  }
 
-    // Smooth scroll handler
-    setupScrollHandler();
-});
+  /**
+   * Initialize dashboard
+   */
+  init() {
+    // Initial data load
+    this.refresh();
+    
+    // Setup auto-refresh
+    this.startAutoRefresh();
+    
+    // Setup manual refresh button
+    this.setupRefreshButton();
+    
+    // Update time display
+    this.startTimeUpdater();
+  }
 
-// Fetch statistics from API
-async function fetchStats() {
+  /**
+   * Main refresh function
+   */
+  async refresh() {
+    if (this.isRefreshing) return;
+    
+    this.isRefreshing = true;
+    this.showRefreshIndicator();
+    
     try {
-        const response = await fetch('/api/stats');
-        const data = await response.json();
-        
-        // Update stat cards
-        document.getElementById('totalSessions').textContent = data.total_sessions;
-        document.getElementById('totalEvents').textContent = data.total_events.toLocaleString();
-        document.getElementById('totalLogins').textContent = data.total_logins;
-        document.getElementById('humanCount').textContent = data.humans;
-        document.getElementById('botCount').textContent = data.bots;
-        document.getElementById('botRate').textContent = data.bot_detection_rate.toFixed(1) + '%';
-
-        // Update pie chart
-        updatePieChart(data.humans, data.bots);
-
-        return data;
+      // Fetch stats and logs in parallel
+      const [stats, logs] = await Promise.all([
+        this.fetchStats(),
+        this.fetchLogs()
+      ]);
+      
+      // Update UI
+      this.updateStats(stats);
+      this.updatePieChart(stats.humans, stats.bots);
+      this.renderLogs(logs);
+      
+      this.logsCache = logs;
+      this.lastUpdateTime = new Date();
+      
     } catch (error) {
-        console.error('Error fetching stats:', error);
+      console.error('Error refreshing dashboard:', error);
+      this.showError('Failed to refresh data');
+    } finally {
+      this.isRefreshing = false;
+      this.hideRefreshIndicator();
     }
-}
+  }
 
-// Update pie chart SVG
-function updatePieChart(humans, bots) {
+  /**
+   * Fetch statistics from API
+   */
+  async fetchStats() {
+    try {
+      const response = await fetch('/api/stats');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch logs from API (UPDATED to use /api/logs)
+   */
+  async fetchLogs() {
+    try {
+      const response = await fetch(`/api/logs?limit=${this.config.maxLogs}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const logs = await response.json();
+      return logs; // Already sorted by server
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Update statistics cards
+   */
+  updateStats(stats) {
+    this.updateElement('totalSessions', stats.total_sessions);
+    this.updateElement('totalEvents', stats.total_events.toLocaleString());
+    this.updateElement('totalLogins', stats.total_logins);
+    this.updateElement('humanCount', stats.humans);
+    this.updateElement('botCount', stats.bots);
+    this.updateElement('botRate', stats.bot_detection_rate.toFixed(1) + '%');
+  }
+
+  /**
+   * Update pie chart
+   */
+  updatePieChart(humans, bots) {
     const total = humans + bots;
-    document.getElementById('totalLoginsChart').textContent = total;
+    const totalElement = document.getElementById('totalLoginsChart');
+    const humanPercentElement = document.getElementById('humanPercent');
+    const botPercentElement = document.getElementById('botPercent');
+    
+    if (totalElement) totalElement.textContent = total;
 
     if (total === 0) {
-        resetPieChart();
-        return;
+      this.updateChartSlice('humanSlice', 0);
+      this.updateChartSlice('botSlice', 0);
+      if (humanPercentElement) humanPercentElement.textContent = '0';
+      if (botPercentElement) botPercentElement.textContent = '0';
+      return;
     }
 
-    const circumference = 2 * Math.PI * 90; // ~565.48
     const humanPercent = (humans / total) * 100;
     const botPercent = (bots / total) * 100;
 
+    const circumference = 2 * Math.PI * 90; // 565.48
     const humanArc = (humanPercent / 100) * circumference;
     const botArc = (botPercent / 100) * circumference;
 
-    const humanSlice = document.getElementById('humanSlice');
-    const botSlice = document.getElementById('botSlice');
+    this.updateChartSlice('humanSlice', humanArc, circumference);
+    this.updateChartSlice('botSlice', botArc, circumference, -humanArc);
 
-    humanSlice.setAttribute('stroke-dasharray', `${humanArc} ${circumference - humanArc}`);
-    botSlice.setAttribute('stroke-dasharray', `${botArc} ${circumference - botArc}`);
-    botSlice.setAttribute('stroke-dashoffset', -humanArc);
+    if (humanPercentElement) humanPercentElement.textContent = humanPercent.toFixed(1);
+    if (botPercentElement) botPercentElement.textContent = botPercent.toFixed(1);
+  }
 
-    document.getElementById('humanPercent').textContent = humanPercent.toFixed(1);
-    document.getElementById('botPercent').textContent = botPercent.toFixed(1);
-}
-
-function resetPieChart() {
-    document.getElementById('humanSlice').setAttribute('stroke-dasharray', '0 565.48');
-    document.getElementById('botSlice').setAttribute('stroke-dasharray', '0 565.48');
-    document.getElementById('humanPercent').textContent = '0';
-    document.getElementById('botPercent').textContent = '0';
-}
-
-// Fetch recent login logs
-async function fetchLogs() {
-    try {
-        const response = await fetch('/data/logins.jsonl');
-        if (!response.ok) return [];
-
-        const text = await response.text();
-        const lines = text.trim().split('\n').filter(line => line.trim());
-        
-        // Parse logs, sort by newest, take last 50
-        const logs = lines.map(line => JSON.parse(line))
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, 50);
-
-        return logs;
-    } catch (error) {
-        console.error('Error fetching logs:', error);
-        return [];
+  /**
+   * Update SVG chart slice
+   */
+  updateChartSlice(elementId, arc, circumference = 565.48, offset = 0) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    element.setAttribute('stroke-dasharray', `${arc} ${circumference - arc}`);
+    if (offset !== 0) {
+      element.setAttribute('stroke-dashoffset', offset);
     }
-}
+  }
 
-// Render logs to the container
-function renderLogs(logs) {
+  /**
+   * Render logs list
+   */
+  renderLogs(logs) {
     const logsList = document.getElementById('logsList');
+    if (!logsList) return;
 
     if (logs.length === 0) {
-        logsList.innerHTML = `
-            <div class="empty-state">
-                <div class="emoji">🔍</div>
-                <div>No login attempts yet. Waiting for data...</div>
-            </div>
-        `;
-        return;
+      logsList.innerHTML = `
+        <div class="empty-state">
+          <div class="emoji">🔍</div>
+          <div>No login attempts yet. Waiting for data...</div>
+        </div>
+      `;
+      return;
     }
 
-    // Only re-render if data changed to avoid flickering
-    const currentHTML = logsList.innerHTML;
-    const newHTML = logs.map(createLogEntryHTML).join('');
-    
-    if (logs.length !== logsCache.length || logs[0]?.timestamp !== logsCache[0]?.timestamp) {
-        logsList.innerHTML = newHTML;
-    }
-}
+    logsList.innerHTML = logs.map(log => this.createLogEntry(log)).join('');
+  }
 
-function createLogEntryHTML(log) {
+  /**
+   * Create single log entry HTML
+   */
+  createLogEntry(log) {
     const date = new Date(log.timestamp);
     const timeStr = date.toLocaleTimeString();
     const dateStr = date.toLocaleDateString();
@@ -127,57 +190,165 @@ function createLogEntryHTML(log) {
     const logType = log.is_bot ? '⚠ Bot' : '✓ Human';
 
     return `
-        <div class="log-entry ${logClass}">
-            <div class="log-header">
-                <span class="log-type">${logType}</span>
-                <span class="log-time">${timeStr} - ${dateStr}</span>
-            </div>
-            <div class="log-session">Session: ${log.session_id}</div>
-            <div class="log-reason">
-                ${log.is_bot ? '🚫 ' + log.reason : '✅ Passed all checks - Human behavior detected'}
-            </div>
-            <div>
-                ${log.is_bot ? `<span class="log-confidence">Confidence: ${(log.confidence * 100).toFixed(0)}%</span>` : ''}
-                <span style="color: #64748b; font-size: 12px; margin-left: 12px;">
-                    Submit time: ${log.time_to_submit}ms
-                </span>
-            </div>
+      <div class="log-entry ${logClass}">
+        <div class="log-header">
+          <span class="log-type">${logType}</span>
+          <span class="log-time">${timeStr} - ${dateStr}</span>
         </div>
+        <div class="log-session">Session: ${log.session_id}</div>
+        <div class="log-reason">
+          ${log.is_bot ? '🚫 ' + log.reason : '✅ Passed all checks - Human behavior detected'}
+        </div>
+        <div>
+          ${log.is_bot ? `<span class="log-confidence">Confidence: ${(log.confidence * 100).toFixed(0)}%</span>` : ''}
+          <span style="color: #64748b; font-size: 12px; margin-left: 12px;">
+            Submit time: ${log.time_to_submit}ms
+          </span>
+        </div>
+      </div>
     `;
-}
+  }
 
-// Main orchestrator
-async function fetchData() {
-    const indicator = document.getElementById('refreshIndicator');
-    if(indicator) indicator.classList.add('active');
-
-    try {
-        const [stats, logs] = await Promise.all([
-            fetchStats(),
-            fetchLogs()
-        ]);
-
-        renderLogs(logs);
-        logsCache = logs;
-        lastUpdateTime = Date.now();
-    } catch (error) {
-        console.error('Error in fetch cycle:', error);
-    } finally {
-        if(indicator) {
-            setTimeout(() => indicator.classList.remove('active'), 1000);
-        }
+  /**
+   * Start auto-refresh timer
+   */
+  startAutoRefresh() {
+    if (this.autoRefreshTimer) {
+      clearInterval(this.autoRefreshTimer);
     }
+    
+    this.autoRefreshTimer = setInterval(() => {
+      this.refresh();
+    }, this.config.autoRefreshInterval);
+    
+    console.log(`Auto-refresh enabled (${this.config.autoRefreshInterval / 1000}s interval)`);
+  }
+
+  /**
+   * Stop auto-refresh
+   */
+  stopAutoRefresh() {
+    if (this.autoRefreshTimer) {
+      clearInterval(this.autoRefreshTimer);
+      this.autoRefreshTimer = null;
+    }
+  }
+
+  /**
+   * Setup refresh button
+   */
+  setupRefreshButton() {
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (!refreshBtn) return;
+    
+    refreshBtn.addEventListener('click', () => {
+      this.refresh();
+    });
+  }
+
+  /**
+   * Start time updater (shows "Last updated X seconds ago")
+   */
+  startTimeUpdater() {
+    setInterval(() => {
+      this.updateLastUpdateTime();
+    }, 1000); // Update every second
+  }
+
+  /**
+   * Update "last updated" display
+   */
+  updateLastUpdateTime() {
+    const element = document.getElementById('lastUpdated');
+    if (!element || !this.lastUpdateTime) return;
+    
+    const now = new Date();
+    const secondsAgo = Math.floor((now - this.lastUpdateTime) / 1000);
+    
+    let text;
+    if (secondsAgo < 5) {
+      text = 'Just now';
+    } else if (secondsAgo < 60) {
+      text = `${secondsAgo}s ago`;
+    } else {
+      const minutesAgo = Math.floor(secondsAgo / 60);
+      text = `${minutesAgo}m ago`;
+    }
+    
+    element.textContent = text;
+  }
+
+  /**
+   * Show refresh indicator
+   */
+  showRefreshIndicator() {
+    const indicator = document.getElementById('refreshIndicator');
+    if (indicator) {
+      indicator.classList.add('active');
+    }
+  }
+
+  /**
+   * Hide refresh indicator
+   */
+  hideRefreshIndicator() {
+    const indicator = document.getElementById('refreshIndicator');
+    if (indicator) {
+      setTimeout(() => {
+        indicator.classList.remove('active');
+      }, 1000);
+    }
+  }
+
+  /**
+   * Show error message
+   */
+  showError(message) {
+    // Create error toast
+    const toast = document.createElement('div');
+    toast.className = 'error-toast';
+    toast.textContent = `⚠ ${message}`;
+    toast.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      background: #ef4444;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 10000;
+    `;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.remove();
+    }, 3000);
+  }
+
+  /**
+   * Update element text content safely
+   */
+  updateElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent = value;
+    }
+  }
 }
 
-function setupScrollHandler() {
-    let previousLogCount = 0;
-    setInterval(() => {
-        if (logsCache.length > previousLogCount) {
-            const logsContainer = document.getElementById('logsContainer');
-            if(logsContainer) {
-                logsContainer.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        }
-        previousLogCount = logsCache.length;
-    }, 3000);
+// Auto-initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    window.dashboardController = new DashboardController({
+      autoRefreshInterval: 10000, // 10 seconds
+      maxLogs: 50
+    });
+  });
+} else {
+  window.dashboardController = new DashboardController({
+    autoRefreshInterval: 10000,
+    maxLogs: 50
+  });
 }

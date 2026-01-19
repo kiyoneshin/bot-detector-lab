@@ -1,28 +1,32 @@
 /**
- * Bot Detector Lab - Behavioral Tracking Engine
- * Captures high-precision mouse, keyboard, and scroll events.
+ * Bot Detector Lab - Enhanced Behavioral Tracking
+ * Tracks mouse, keyboard, scroll, paste, and other interactions
  */
 
 class BehaviorTracker {
   constructor(config = {}) {
-    // Configuration
     this.config = {
       batchSize: config.batchSize || 50,
-      batchInterval: config.batchInterval || 2000, // 2 seconds
+      batchInterval: config.batchInterval || 2000,
       endpoint: config.endpoint || '/api/collect',
       debug: config.debug || false
     };
 
-    // State
     this.sessionId = this.generateSessionId();
     this.eventBuffer = [];
     this.sessionStartTime = performance.now();
     this.pageLoadTime = Date.now();
     this.fingerprint = null;
-    this.lastMousePosition = { x: 0, y: 0, timestamp: 0 };
-    this.keyboardState = {}; // Track key down times for flight time
     
-    // Initialize
+    // State tracking
+    this.lastMousePosition = { x: 0, y: 0, timestamp: 0 };
+    this.keyboardState = {};
+    this.scrollState = {
+      lastY: 0,
+      lastTimestamp: 0,
+      scrollCount: 0
+    };
+    
     this.init();
   }
 
@@ -30,45 +34,30 @@ class BehaviorTracker {
    * Initialize tracking
    */
   async init() {
-    // 1. Generate fingerprint using the external module
-    if (window.Fingerprinter) {
-        const fingerprinter = new window.Fingerprinter();
-        this.fingerprint = await fingerprinter.generate();
-    } else {
-        console.error('Fingerprinter module not loaded!');
-        this.fingerprint = { error: 'missing_dependency' };
+    // Generate fingerprint
+    if (window.BotDetectorFingerprint) {
+      this.fingerprint = await window.BotDetectorFingerprint.getFingerprint();
     }
     
-    // 2. Set up event listeners
     this.attachEventListeners();
-    
-    // 3. Set up batch flushing
     this.startBatchTimer();
-    
-    // 4. Send initial session metadata
     this.sendSessionMetadata();
     
-    // 5. Flush on page unload
     window.addEventListener('beforeunload', () => this.flush());
     
-    this.log('Tracker initialized', { sessionId: this.sessionId, fingerprint: this.fingerprint });
+    this.log('Tracker initialized', { sessionId: this.sessionId });
   }
 
-  /**
-   * Generate unique session ID
-   */
   generateSessionId() {
-    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    return 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
   }
 
   /**
    * Attach all event listeners
    */
   attachEventListeners() {
-    // Mouse movement - high frequency capture
+    // Mouse events
     document.addEventListener('mousemove', this.handleMouseMove.bind(this), { passive: true });
-    
-    // Mouse clicks
     document.addEventListener('mousedown', this.handleMouseDown.bind(this), { passive: true });
     document.addEventListener('mouseup', this.handleMouseUp.bind(this), { passive: true });
     document.addEventListener('click', this.handleClick.bind(this), { passive: true });
@@ -77,26 +66,38 @@ class BehaviorTracker {
     document.addEventListener('keydown', this.handleKeyDown.bind(this), { passive: true });
     document.addEventListener('keyup', this.handleKeyUp.bind(this), { passive: true });
     
-    // Scroll events
+    // Scroll events (ENHANCED)
     document.addEventListener('scroll', this.handleScroll.bind(this), { passive: true });
+    window.addEventListener('wheel', this.handleWheel.bind(this), { passive: true });
     
-    // Focus events (tab switching detection)
+    // Paste events (NEW - ENHANCED)
+    document.addEventListener('paste', this.handlePaste.bind(this), { passive: true });
+    
+    // Copy events (NEW)
+    document.addEventListener('copy', this.handleCopy.bind(this), { passive: true });
+    
+    // Focus/blur
     window.addEventListener('blur', this.handleBlur.bind(this));
     window.addEventListener('focus', this.handleFocus.bind(this));
     
-    // Form interactions (honeypot detection)
+    // Form events
     document.addEventListener('input', this.handleInput.bind(this), { passive: true });
     document.addEventListener('change', this.handleChange.bind(this), { passive: true });
+    
+    // Context menu (NEW)
+    document.addEventListener('contextmenu', this.handleContextMenu.bind(this), { passive: true });
+    
+    // Selection (NEW)
+    document.addEventListener('selectstart', this.handleSelectStart.bind(this), { passive: true });
   }
 
   /**
-   * Mouse move handler - captures trajectory
+   * Mouse move handler
    */
   handleMouseMove(e) {
     const now = performance.now();
     const timestamp = Date.now();
     
-    // Calculate velocity
     const timeDelta = now - this.lastMousePosition.timestamp;
     const distance = Math.sqrt(
       Math.pow(e.clientX - this.lastMousePosition.x, 2) +
@@ -104,9 +105,8 @@ class BehaviorTracker {
     );
     const velocity = timeDelta > 0 ? distance / timeDelta : 0;
     
-    this.addEvent({
-      event_type: 'mousemove',
-      timestamp: timestamp,
+    this.pushEvent('mousemove', {
+      timestamp,
       precise_time: now,
       x: e.clientX,
       y: e.clientY,
@@ -122,20 +122,19 @@ class BehaviorTracker {
   }
 
   handleMouseDown(e) {
-    this.addEvent({
-      event_type: 'mousedown',
+    this.pushEvent('mousedown', {
       timestamp: Date.now(),
       precise_time: performance.now(),
       x: e.clientX,
       y: e.clientY,
       button: e.button,
+      buttons: e.buttons,
       target: this.getElementInfo(e.target)
     });
   }
 
   handleMouseUp(e) {
-    this.addEvent({
-      event_type: 'mouseup',
+    this.pushEvent('mouseup', {
       timestamp: Date.now(),
       precise_time: performance.now(),
       x: e.clientX,
@@ -146,29 +145,36 @@ class BehaviorTracker {
   }
 
   handleClick(e) {
-    const target = e.target;
-    this.addEvent({
-      event_type: 'click',
+    this.pushEvent('click', {
       timestamp: Date.now(),
       precise_time: performance.now(),
       x: e.clientX,
       y: e.clientY,
-      target: this.getElementInfo(target),
-      is_honeypot: this.isHoneypot(target)
+      target: this.getElementInfo(e.target),
+      is_honeypot: this.isHoneypot(e.target)
     });
   }
 
+  /**
+   * Keyboard handlers
+   */
   handleKeyDown(e) {
     const key = e.key;
     const now = performance.now();
+    
     if (!this.keyboardState[key]) {
       this.keyboardState[key] = { downTime: now };
-      this.addEvent({
-        event_type: 'keydown',
+      
+      this.pushEvent('keydown', {
         timestamp: Date.now(),
         precise_time: now,
         key: key,
         code: e.code,
+        key_code: e.keyCode,
+        ctrl_key: e.ctrlKey,
+        alt_key: e.altKey,
+        shift_key: e.shiftKey,
+        meta_key: e.metaKey,
         target: this.getElementInfo(e.target)
       });
     }
@@ -177,87 +183,213 @@ class BehaviorTracker {
   handleKeyUp(e) {
     const key = e.key;
     const now = performance.now();
+    
     let flightTime = 0;
     if (this.keyboardState[key]) {
       flightTime = now - this.keyboardState[key].downTime;
       delete this.keyboardState[key];
     }
-    this.addEvent({
-      event_type: 'keyup',
+    
+    this.pushEvent('keyup', {
       timestamp: Date.now(),
       precise_time: now,
       key: key,
       code: e.code,
+      key_code: e.keyCode,
       flight_time: Math.round(flightTime * 100) / 100,
       target: this.getElementInfo(e.target)
     });
   }
 
+  /**
+   * Scroll handlers (ENHANCED)
+   */
   handleScroll(e) {
-    this.addEvent({
-      event_type: 'scroll',
+    const now = performance.now();
+    const timestamp = Date.now();
+    
+    const scrollY = window.scrollY;
+    const timeDelta = now - this.scrollState.lastTimestamp;
+    const distanceDelta = Math.abs(scrollY - this.scrollState.lastY);
+    const scrollSpeed = timeDelta > 0 ? distanceDelta / timeDelta : 0;
+    
+    this.scrollState.scrollCount++;
+    
+    this.pushEvent('scroll', {
+      timestamp,
+      precise_time: now,
+      scroll_x: window.scrollX,
+      scroll_y: scrollY,
+      scroll_height: document.documentElement.scrollHeight,
+      client_height: document.documentElement.clientHeight,
+      scroll_speed: Math.round(scrollSpeed * 1000) / 1000,
+      scroll_count: this.scrollState.scrollCount
+    });
+    
+    this.scrollState.lastY = scrollY;
+    this.scrollState.lastTimestamp = now;
+  }
+
+  /**
+   * Wheel handler (detect smooth vs jump scrolling)
+   */
+  handleWheel(e) {
+    this.pushEvent('wheel', {
       timestamp: Date.now(),
       precise_time: performance.now(),
-      scroll_x: window.scrollX,
-      scroll_y: window.scrollY
+      delta_x: e.deltaX,
+      delta_y: e.deltaY,
+      delta_z: e.deltaZ,
+      delta_mode: e.deltaMode
     });
   }
 
-  handleBlur() {
-    this.addEvent({ event_type: 'blur', timestamp: Date.now(), precise_time: performance.now() });
+  /**
+   * Paste handler (NEW - BOTS OFTEN PASTE PASSWORDS)
+   */
+  handlePaste(e) {
+    const target = e.target;
+    
+    this.pushEvent('paste', {
+      timestamp: Date.now(),
+      precise_time: performance.now(),
+      target: this.getElementInfo(target),
+      is_password_field: target.type === 'password',
+      is_honeypot: this.isHoneypot(target),
+      data_types: e.clipboardData ? Array.from(e.clipboardData.types) : []
+    });
+    
+    // Flag if pasting into password field (common bot behavior)
+    if (target.type === 'password') {
+      this.pushEvent('password_paste', {
+        timestamp: Date.now(),
+        precise_time: performance.now(),
+        target: this.getElementInfo(target),
+        warning: 'Password pasted instead of typed'
+      });
+    }
   }
 
-  handleFocus() {
-    this.addEvent({ event_type: 'focus', timestamp: Date.now(), precise_time: performance.now() });
+  /**
+   * Copy handler (NEW)
+   */
+  handleCopy(e) {
+    this.pushEvent('copy', {
+      timestamp: Date.now(),
+      precise_time: performance.now(),
+      target: this.getElementInfo(e.target)
+    });
+  }
+
+  /**
+   * Context menu (right-click)
+   */
+  handleContextMenu(e) {
+    this.pushEvent('contextmenu', {
+      timestamp: Date.now(),
+      precise_time: performance.now(),
+      x: e.clientX,
+      y: e.clientY,
+      target: this.getElementInfo(e.target)
+    });
+  }
+
+  /**
+   * Selection start
+   */
+  handleSelectStart(e) {
+    this.pushEvent('selectstart', {
+      timestamp: Date.now(),
+      precise_time: performance.now(),
+      target: this.getElementInfo(e.target)
+    });
+  }
+
+  handleBlur(e) {
+    this.pushEvent('blur', {
+      timestamp: Date.now(),
+      precise_time: performance.now()
+    });
+  }
+
+  handleFocus(e) {
+    this.pushEvent('focus', {
+      timestamp: Date.now(),
+      precise_time: performance.now()
+    });
   }
 
   handleInput(e) {
-    this.addEvent({
-      event_type: 'input',
+    const target = e.target;
+    
+    this.pushEvent('input', {
       timestamp: Date.now(),
       precise_time: performance.now(),
-      target: this.getElementInfo(e.target),
-      is_honeypot: this.isHoneypot(e.target)
+      target: this.getElementInfo(target),
+      value_length: target.value ? target.value.length : 0,
+      is_honeypot: this.isHoneypot(target)
     });
   }
 
   handleChange(e) {
-    this.addEvent({
-      event_type: 'change',
+    const target = e.target;
+    
+    this.pushEvent('change', {
       timestamp: Date.now(),
       precise_time: performance.now(),
-      target: this.getElementInfo(e.target),
-      is_honeypot: this.isHoneypot(e.target)
+      target: this.getElementInfo(target),
+      is_honeypot: this.isHoneypot(target)
     });
   }
 
+  /**
+   * Get element information
+   */
   getElementInfo(element) {
     if (!element) return null;
+    
     return {
       tag: element.tagName.toLowerCase(),
       id: element.id || null,
-      classes: element.className ? (typeof element.className === 'string' ? element.className.split(' ') : []) : [],
+      classes: element.className ? element.className.split(' ') : [],
       name: element.name || null,
       type: element.type || null
     };
   }
 
+  /**
+   * Check if element is honeypot
+   */
   isHoneypot(element) {
     if (!element) return false;
-    if (element.classList.contains('honeypot') || element.dataset.honeypot === 'true') return true;
     
-    // Check computed styles for hidden elements
-    const style = window.getComputedStyle(element);
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || element.offsetParent === null) {
+    if (element.classList.contains('honeypot') || 
+        element.dataset.honeypot === 'true') {
       return true;
     }
+    
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || 
+        style.visibility === 'hidden' || 
+        style.opacity === '0' ||
+        element.offsetParent === null) {
+      return true;
+    }
+    
     return false;
   }
 
-  addEvent(event) {
-    event.session_id = this.sessionId;
-    event.page_url = window.location.pathname;
-    event.time_since_load = Date.now() - this.pageLoadTime;
+  /**
+   * Push event to buffer
+   */
+  pushEvent(eventType, data) {
+    const event = {
+      session_id: this.sessionId,
+      event_type: eventType,
+      page_url: window.location.pathname,
+      time_since_load: Date.now() - this.pageLoadTime,
+      ...data
+    };
     
     this.eventBuffer.push(event);
     
@@ -266,6 +398,9 @@ class BehaviorTracker {
     }
   }
 
+  /**
+   * Send session metadata
+   */
   async sendSessionMetadata() {
     const metadata = {
       session_id: this.sessionId,
@@ -286,6 +421,9 @@ class BehaviorTracker {
     }
   }
 
+  /**
+   * Flush events to server
+   */
   async flush() {
     if (this.eventBuffer.length === 0) return;
     
@@ -304,9 +442,20 @@ class BehaviorTracker {
         body: JSON.stringify(payload),
         keepalive: true
       });
+      
+      if (response.ok) {
+        this.log(`Sent ${payload.events.length} events`);
+      }
     } catch (e) {
       this.log('Error sending events', e);
     }
+  }
+
+  /**
+   * Force send events (for testing)
+   */
+  forceSendEvents() {
+    this.flush();
   }
 
   startBatchTimer() {
@@ -327,8 +476,8 @@ class BehaviorTracker {
 // Auto-initialize
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    window.behaviorTracker = new BehaviorTracker({ debug: true });
+    window.BotDetectorTracker = new BehaviorTracker({ debug: true });
   });
 } else {
-  window.behaviorTracker = new BehaviorTracker({ debug: true });
+  window.BotDetectorTracker = new BehaviorTracker({ debug: true });
 }
