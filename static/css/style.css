@@ -1,10 +1,14 @@
 /* =========================================
    GLOBAL RESET & UTILITIES
    ========================================= */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+:root {
+    --primary-color: #0d6efd;
+    --secondary-color: #6c757d;
+    --bg-light: #f8f9fa;
+    --text-dark: #212529;
+    --success-color: #198754;
+    --danger-color: #dc3545;
+    --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 body {
@@ -49,7 +53,7 @@ body {
 }
 
 /* =========================================
-   LOGIN PAGE STYLES
+   LOGIN PAGE STYLES (.login-layout)
    ========================================= */
 body.login-layout {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -124,7 +128,7 @@ body.login-layout {
 }
 body.debug .debug-info { display: block; }
 
-/* DASHBOARD STYLES */
+/* DASHBOARD STYLES (.dashboard-layout) */
 
 body.dashboard-layout {
     background: #0f172a;
@@ -198,3 +202,26 @@ body.dashboard-layout {
     border-radius: 8px; opacity: 0; transition: opacity 0.3s;
 }
 .refresh-indicator.active { opacity: 1; }
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.last-updated {
+    font-size: 0.9rem;
+    color: #6c757d;
+    font-style: italic;
+}
+
+.btn-primary:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+.refresh-spinner {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+}

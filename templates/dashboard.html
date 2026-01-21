@@ -1,1 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Detector Lab - Analytics Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/png" href="/static/img/logo.png">
+</head>
+<body class="dashboard-layout">
+    
+    <div class="header">
+        <div class="header-content" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <img src="/static/img/logo.png" alt="Logo" height="50" style="border-radius: 8px;">
+                <div>
+                    <h1 style="margin: 0; font-size: 24px;">Bot Detector Lab</h1>
+                    <p style="margin: 0; font-size: 14px; opacity: 0.8;">Real-time Behavioral Analysis</p>
+                </div>
+            </div>
 
+            <div class="header-controls">
+                <span id="lastUpdated" class="last-updated">Connecting...</span>
+                
+                <button id="refreshBtn" class="btn btn-primary btn-sm">
+                    🔄 Refresh Now
+                </button>
+                
+                <span id="refreshIndicator" class="refresh-spinner" style="display: none; font-size: 20px;">⏳</span>
+                
+                <a href="/" class="btn btn-secondary btn-sm" style="margin-left: 10px; text-decoration: none;">
+                    Exit
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="label">Total Sessions</div>
+            <div class="value" id="totalSessions">0</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="label">Total Events</div>
+            <div class="value" id="totalEvents">0</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="label">Total Logins</div>
+            <div class="value" id="totalLogins">0</div>
+        </div>
+
+        <div class="stat-card humans">
+            <div class="label">✓ Humans</div>
+            <div class="value" id="humanCount">0</div>
+        </div>
+
+        <div class="stat-card bots">
+            <div class="label">⚠ Bots Detected</div>
+            <div class="value" id="botCount">0</div>
+        </div>
+
+        <div class="stat-card rate">
+            <div class="label">Bot Detection Rate</div>
+            <div class="value" id="botRate">0%</div>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <h2>📊 Detection Distribution</h2>
+        <div class="pie-chart-wrapper">
+            <div class="pie-chart">
+                <svg width="200" height="200" viewBox="0 0 200 200">
+                    <circle cx="100" cy="100" r="90" fill="none" stroke="#10b981" stroke-width="20" 
+                            id="humanSlice" stroke-dasharray="0 565.48" />
+                    <circle cx="100" cy="100" r="90" fill="none" stroke="#ef4444" stroke-width="20" 
+                            id="botSlice" stroke-dasharray="0 565.48" stroke-dashoffset="0" />
+                </svg>
+                
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                    <div style="font-size: 32px; font-weight: 700;" id="totalLoginsChart">0</div>
+                    <div style="font-size: 12px; color: #94a3b8;">Total Logins</div>
+                </div>
+            </div>
+
+            <div class="pie-legend">
+                <div class="legend-item">
+                    <div class="legend-color human"></div>
+                    <div>
+                        <div style="font-weight: 600;">Humans</div>
+                        <div style="font-size: 14px; color: #94a3b8;"><span id="humanPercent">0</span>%</div>
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color bot"></div>
+                    <div>
+                        <div style="font-weight: 600;">Bots</div>
+                        <div style="font-size: 14px; color: #94a3b8;"><span id="botPercent">0</span>%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="logs-container" id="logsContainer">
+        <h2>📋 Recent Login Attempts</h2>
+        <div id="logsList">
+            <div class="empty-state">
+                <div class="emoji">🔍</div>
+                <div>No login attempts yet. Waiting for data...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

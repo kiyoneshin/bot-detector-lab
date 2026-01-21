@@ -1,1 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Detector Lab - Tracker Debugger</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .debug-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .debug-box {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .event-type { color: #007bff; font-weight: bold; }
+        .timestamp { color: #888; font-size: 12px; }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <div class="text-center mb-4">
+            <img src="/static/img/logo.png" alt="Logo" height="60">
+            <h2>Tracker Debugger</h2>
+            <p class="text-muted">Move your mouse and type to see collected data in real-time.</p>
+            <a href="/" class="btn btn-outline-primary btn-sm">← Back to Login</a>
+        </div>
 
+        <div class="debug-container">
+            <div>
+                <h4>🖱️ Behavioral Events (tracker.js)</h4>
+                <div id="eventLog" class="debug-box bg-dark text-light">
+                    </div>
+            </div>
+
+            <div>
+                <h4>🖥️ Device Fingerprint (fingerprint.js)</h4>
+                <div id="fingerprintData" class="debug-box">
+                    <p class="text-muted">Calculating...</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3">
+             <button id="forceCollectBtn" class="btn btn-primary">Force Send Batch to API</button>
+        </div>
+    </div>
+
+    <script src="/static/js/fingerprint.js"></script>
+    <script src="/static/js/tracker.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const eventLog = document.getElementById('eventLog');
+            const fingerprintBox = document.getElementById('fingerprintData');
+
+            try {
+                const fp = await BotDetectorFingerprint.getFingerprint();
+                fingerprintBox.innerHTML = `<pre>${JSON.stringify(fp, null, 2)}</pre>`;
+            } catch (e) {
+                fingerprintBox.innerHTML = `<p class="text-danger">Error getting fingerprint: ${e.message}</p>`;
+            }
+
+            const originalPushEvent = window.BotDetectorTracker.pushEvent;
+            
+            window.BotDetectorTracker.pushEvent = function(eventType, data) {
+                originalPushEvent.call(window.BotDetectorTracker, eventType, data);
+
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                const time = new Date().toLocaleTimeString();
+                let details = '';
+                if (eventType === 'mousemove' || eventType === 'click') {
+                    details = `X:${data.x}, Y:${data.y}`;
+                }
+                
+                entry.innerHTML = `
+                    <span class="timestamp">[${time}]</span> 
+                    <span class="event-type">${eventType.toUpperCase()}</span> 
+                    ${details}
+                `;
+                eventLog.insertBefore(entry, eventLog.firstChild);
+            };
+
+            //
+            document.getElementById('forceCollectBtn').addEventListener('click', () => {
+                window.BotDetectorTracker.forceSendEvents();
+                eventLog.innerHTML = '<div class="text-success">Batch sent to server! Log cleared.</div>' + eventLog.innerHTML;
+            });
+        });
+    </script>
+</body>
+</html>

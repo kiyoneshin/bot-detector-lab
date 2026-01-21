@@ -1,1 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Detector Lab - Secure Login</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="login-layout">
+    <div class="container">
+        <div class="logo">
+            <h1>🤖 Bot Detector Lab</h1>
+            <p>Behavioral Analysis System</p>
+        </div>
 
+        <form id="loginForm" action="/api/login" method="POST">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <div class="honeypot-field">
+                <label for="website">Website (leave blank)</label>
+                <input type="text" id="website" name="website" class="honeypot" data-honeypot="true" tabindex="-1" autocomplete="off">
+            </div>
+
+            <div class="honeypot-email">
+                <label for="email_confirm">Confirm Email</label>
+                <input type="email" id="email_confirm" name="email_confirm" class="honeypot" data-honeypot="true" tabindex="-1" autocomplete="off">
+            </div>
+
+            <div class="bot-trap">
+                <input type="text" id="bot_field" name="bot_field" class="honeypot" data-honeypot="true" tabindex="-1" autocomplete="off">
+            </div>
+
+            <input type="hidden" id="form_time" name="form_time" value="">
+            
+            <div class="verify-human">
+                <label for="verify">Leave this empty</label>
+                <input type="text" id="verify" name="verify" class="honeypot" data-honeypot="true" tabindex="-1" autocomplete="off">
+            </div>
+
+            <button type="submit" class="btn-primary">Login</button>
+        </form>
+
+        <div class="links">
+            <a href="#">Forgot Password?</a>
+            <span>|</span>
+            <a href="#">Sign Up</a>
+            <a href="/admin" class="admin-link honeypot" data-honeypot="true">Admin Panel</a>
+        </div>
+
+        <div id="statusMessage" class="status-message"></div>
+
+        <div class="debug-info">
+            <h4>Debug Information</h4>
+            <div>Session ID: <span id="debugSessionId">-</span></div>
+            <div>Events Tracked: <span id="debugEventCount">0</span></div>
+            <div>Mouse Moves: <span id="debugMouseMoves">0</span></div>
+            <div>Fingerprint: <span id="debugFingerprint">Generating...</span></div>
+        </div>
+    </div>
+
+<script src="/static/js/fingerprint.js"></script>
+<script src="/static/js/tracker.js"></script>
+
+    <script>
+        // Set form load time immediately
+        document.getElementById('form_time').value = Date.now();
+
+        // Check debug mode
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('debug') === 'true') {
+            document.body.classList.add('debug');
+            
+            // Start debug updater
+            setInterval(() => {
+                if (window.behaviorTracker) {
+                    document.getElementById('debugSessionId').textContent = window.behaviorTracker.sessionId;
+                    document.getElementById('debugEventCount').textContent = window.behaviorTracker.eventBuffer.length;
+                    document.getElementById('debugMouseMoves').textContent = 
+                        window.behaviorTracker.eventBuffer.filter(e => e.event_type === 'mousemove').length;
+                    
+                    if (window.behaviorTracker.fingerprint) {
+                        document.getElementById('debugFingerprint').textContent = 
+                            window.behaviorTracker.fingerprint.canvas_hash || 'N/A';
+                    }
+                }
+            }, 500);
+        }
+
+        // Form Submission Logic
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Add Timing and Session Info
+            data.time_to_submit = Date.now() - parseInt(document.getElementById('form_time').value);
+            
+            if (window.behaviorTracker) {
+                data.session_id = window.behaviorTracker.sessionId;
+                await window.behaviorTracker.flush(); // Send remaining logs
+            }
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                const statusEl = document.getElementById('statusMessage');
+                statusEl.style.display = 'block';
+                
+                if (result.is_bot) {
+                    statusEl.className = 'status-message bot-detected';
+                    statusEl.textContent = `⚠️ Bot Detected! Reason: ${result.reason}`;
+                } else if (response.ok) {
+                    statusEl.className = 'status-message success';
+                    statusEl.textContent = '✓ Login successful! Behavioral analysis complete.';
+                    setTimeout(() => window.location.href = '/dashboard', 1500);
+                } else {
+                    statusEl.className = 'status-message error';
+                    statusEl.textContent = result.message || 'Login failed';
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+            }
+        });
+
+        // Honeypot Listeners
+        document.querySelectorAll('.honeypot').forEach(field => {
+            field.addEventListener('input', () => {
+                if (window.behaviorTracker) {
+                    window.behaviorTracker.addEvent({
+                        event_type: 'honeypot_filled',
+                        timestamp: Date.now(),
+                        field_id: field.id
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
